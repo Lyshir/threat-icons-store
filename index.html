@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Deadlock Threat Icons settings store</title>
+<style>
+  body { margin: 0; background: #171614; color: #e8e2d6; font: 16px/1.55 system-ui, sans-serif; }
+  main { max-width: 38em; margin: 3em auto; padding: 0 1.25em; }
+  h1 { font-size: 1.35em; color: #5fe69e; margin: 0 0 0.6em; }
+  code { background: #ffffff14; padding: 0.1em 0.35em; border-radius: 3px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Deadlock Threat Icons: settings store</h1>
+  <p>The Deadlock Threat Icons mod opens this page in a hidden browser inside the game, once per launch, to keep its in-game settings until the next launch.</p>
+  <p>The settings stay in the browser storage of your own Steam client. They reach this page in the part of the address after <code>#</code>, which browsers never send to any server, and nothing on this page sends anything anywhere.</p>
+</main>
+<script>
+// Protocol "TMS1", version 1. The mod (threat_mod_hud.js) opens
+//   <this page>#<encodeURIComponent(JSON request)>
+// and reads the answer from the page title: "TMS1:" + JSON.
+//   {"o":"hello","i":id}        -> {"o":"ready","i":id,"ok":true,"v":1,"h":<page address>}
+//   {"o":"r","i":id}            -> {"o":"r","i":id,"ok":true,"x":0}  or  "x":1,"d":<saved text>
+//   {"o":"w","i":id,"v":text}   -> {"o":"w","i":id,"ok":true}
+//   {"o":"d","i":id}            -> {"o":"d","i":id,"ok":true}
+//   anything that fails         -> {"o":..., "i":id, "ok":false, "e":<reason>}
+// Every request has its own id, so every answer changes the title. Only the one key
+// below is ever read or written.
+(function () {
+  "use strict";
+  var VERSION = 1;
+  var PREFIX = "TMS1:";
+  var KEY = "deadlock-threat-icons/settings";
+  var MAX_VALUE = 3000;
+
+  function answer(message) {
+    document.title = PREFIX + JSON.stringify(message);
+  }
+
+  function handle() {
+    var raw = location.hash.slice(1);
+    if (!raw) return;
+    var request;
+    try { request = JSON.parse(decodeURIComponent(raw)); } catch (e) { return; }
+    if (!request || typeof request !== "object" || typeof request.i !== "string" || request.i.length > 40) return;
+    var op = request.o === "hello" ? "ready" : String(request.o).slice(0, 10);
+    var out = { o: op, i: request.i, ok: true };
+    try {
+      if (request.o === "hello") {
+        out.v = VERSION;
+        out.h = location.href.split("#")[0];
+      } else if (request.o === "r") {
+        var value = localStorage.getItem(KEY);
+        if (value === null) {
+          out.x = 0;
+        } else {
+          out.x = 1;
+          out.d = value;
+        }
+      } else if (request.o === "w") {
+        if (typeof request.v !== "string" || request.v.length > MAX_VALUE) throw new Error("value missing or too long");
+        localStorage.setItem(KEY, request.v);
+      } else if (request.o === "d") {
+        localStorage.removeItem(KEY);
+      } else {
+        throw new Error("unknown request");
+      }
+    } catch (e) {
+      out = { o: op, i: request.i, ok: false, e: String((e && e.message) || e).slice(0, 100) };
+      if (request.o === "hello") out.v = VERSION;
+    }
+    answer(out);
+  }
+
+  window.addEventListener("hashchange", handle);
+  handle();
+})();
+</script>
+</body>
+</html>
